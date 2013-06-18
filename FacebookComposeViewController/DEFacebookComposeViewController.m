@@ -48,7 +48,7 @@
 @property (nonatomic, retain) UIPickerView *accountPickerView;
 @property (nonatomic, retain) UIPopoverController *accountPickerPopoverController;
 @property (retain, nonatomic) NSString *urlSchemeSuffix;
-
+@property (nonatomic, retain) FBRequestConnection *fbRequestConnection;
 
 - (void)facebookComposeViewControllerInit;
 - (void)updateFramesForOrientation:(UIInterfaceOrientation)interfaceOrientation;
@@ -198,7 +198,8 @@ enum {
     [_gradientView release], _gradientView = nil;
     [_accountPickerView release], _accountPickerView = nil;
     [_accountPickerPopoverController release], _accountPickerPopoverController = nil;
-    
+    [_fbRequestConnection release], _fbRequestConnection = nil;
+
 //    NSLog(@"DEALLOC DEFacebookComposeViewController");
     
     [super dealloc];
@@ -700,7 +701,7 @@ enum {
     [_sendButton addSubview:activity];
     [activity startAnimating];
     [activity release];
-    self.view.userInteractionEnabled = NO;
+    self.textView.userInteractionEnabled = NO;
     
     NSMutableDictionary *d = nil;
     if ( [self.urls count] > 0 && [self.images count] > 0 ) {
@@ -729,13 +730,16 @@ enum {
     }
 
     // create the connection object
-    FBRequestConnection *newConnection = [[[FBRequestConnection alloc] init] autorelease];
+    self.fbRequestConnection = [[[FBRequestConnection alloc] init] autorelease];
     FBRequest *request = [[FBRequest alloc] initWithSession:FBSession.activeSession
                                                   graphPath:graphPath
                                                  parameters:d
                                                  HTTPMethod:@"POST"];
     
-    [newConnection addRequest:request completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
+    [_fbRequestConnection addRequest:request completionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
+
+        self.fbRequestConnection = nil;
+
         if (error)
         {
 //            NSLog(@"    error");
@@ -743,19 +747,21 @@ enum {
             // remove activity
             [[[self.sendButton subviews] lastObject] removeFromSuperview];
             [self setSendButtonTitle:NSLocalizedString(@"Post",@"")];
-            self.view.userInteractionEnabled = YES;
-            
-            UIAlertView *alertView = [[[UIAlertView alloc] initWithTitle:NSLocalizedString(@"Cannot Send Message", @"")
-                                                                 message:[NSString stringWithFormat:NSLocalizedString(@"The message, \"%@\" cannot be sent because the connection to Facebook failed.", @""), self.textView.text]
-                                                                delegate:self
-                                                       cancelButtonTitle:NSLocalizedString(@"Cancel", @"")
-                                                       otherButtonTitles:NSLocalizedString(@"Try Again", @""), nil] autorelease];
-            alertView.tag = DEFacebookComposeViewControllerCannotSendAlert;
-            [alertView show];
-            
+            self.textView.userInteractionEnabled = YES;
+            [self.textView becomeFirstResponder];
+
+            if (error.domain != FacebookSDKDomain || error.code != FBErrorOperationCancelled) {
+                UIAlertView *alertView = [[[UIAlertView alloc]
+                                           initWithTitle:NSLocalizedString(@"Cannot Send Message", @"")
+                                           message:[NSString stringWithFormat:NSLocalizedString(@"The message, \"%@\" cannot be sent because the connection to Facebook failed.", @""), self.textView.text]
+                                           delegate:self
+                                           cancelButtonTitle:NSLocalizedString(@"Cancel", @"")
+                                           otherButtonTitles:NSLocalizedString(@"Try Again", @""), nil] autorelease];
+                alertView.tag = DEFacebookComposeViewControllerCannotSendAlert;
+                [alertView show];
+            }
+
             self.sendButton.enabled = YES;
-            
-            
         }
         else
         {
@@ -779,18 +785,23 @@ enum {
         };
     }];
     
-    [newConnection start];
+    [_fbRequestConnection start];
     [request release];
 }
 
 
 - (IBAction)cancel
 {
-    if (self.completionHandler) {
-        self.completionHandler(DEFacebookComposeViewControllerResultCancelled);
-    }
-    else {
-        [self dismissModalViewControllerAnimated:YES];
+    if (self.fbRequestConnection != nil) {
+        // Cancel the connection but do not close the dialog.
+        [self.fbRequestConnection cancel];
+    } else {
+        if (self.completionHandler) {
+            self.completionHandler(DEFacebookComposeViewControllerResultCancelled);
+        }
+        else {
+            [self dismissModalViewControllerAnimated:YES];
+        }
     }
 }
 
