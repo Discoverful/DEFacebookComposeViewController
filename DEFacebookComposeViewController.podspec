@@ -18,6 +18,8 @@ Pod::Spec.new do |s|
 
   s.resources = "FacebookComposeViewController/Resources/*.png",
                 "FacebookComposeViewController/*.xib"
+                
+  s.requires_arc = false 
 
   s.frameworks = 'Accounts', 'QuartzCore'
   s.dependency 'Facebook-iOS-SDK', '~> 3.1'
